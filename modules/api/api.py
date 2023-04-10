@@ -51,10 +51,17 @@ code_style_permission_denied = 100007
 code_style_not_exists = 100008
 code_style_already_exists = 100009
 
-class ApiException(Exception):
-    def __init__(self, code, message):
+
+class ApiException(HTTPException):
+    def __init__(
+        self, 
+        code, 
+        message,
+        status_code: int = 200,
+    ) -> None:
         self.code = code
         self.message = message
+        super().__init__(status_code=status_code)
 
 def upscaler_to_index(name: str):
     try:
@@ -169,7 +176,7 @@ def api_middleware(app: FastAPI):
         sign_decoded = base64.b64decode(sign)
 
         if not verifier.verify(data_hash, sign_decoded):
-            raise Exception(code_invalid_signature, "signature is invalid.")
+            raise ApiException(code_invalid_signature, "signature is invalid.")
 
         scope = request.scope
         receive = request.receive
@@ -208,26 +215,31 @@ def api_middleware(app: FastAPI):
         return res
 
     def handle_exception(request: Request, e: Exception):
+        status_code = 500
         err = {}
         if request.url.path.startswith("/api/v2/"):
+            status_code = vars(e).get('status_code', 200)
             err = {
                 "code": vars(e).get('code', 100001),
                 "error": vars(e).get('message', str(e)),
             }
         else:
+            status_code = vars(e).get('status_code', 500)
             err = {
                 "error": type(e).__name__,
                 "detail": vars(e).get('detail', ''),
                 "body": vars(e).get('body', ''),
                 "errors": str(e),
             }
+        
         logger.error("api-exception, url: %s, error: %s", request.url, err)
-        if not isinstance(e, HTTPException): # do not print backtrace on known httpexceptions
+
+        if not isinstance(e, HTTPException):
             if rich_available:
                 console.print_exception(show_locals=True, max_frames=2, extra_lines=1, suppress=[anyio, starlette], word_wrap=False, width=min([console.width, 200]))
             else:
                 traceback.print_exc()
-        return JSONResponse(status_code=vars(e).get('status_code', 500), content=jsonable_encoder(err))
+        return JSONResponse(status_code=status_code, content=jsonable_encoder(err))
 
     @app.middleware("http")
     async def exception_handling(request: Request, call_next):
@@ -755,7 +767,11 @@ class Api:
         assert createStyle.negative_prompt, "negative_prompt cannot be empty!"
         
         if createStyle.get_style_name() in shared.prompt_styles.styles:
-            raise Exception(code_style_already_exists, "style name already exists")
+            raise ApiException(
+                code=code_style_already_exists,
+                message="style name already exists",
+                status_code=409
+            )
 
         createStyle.save_style()
         return PromptStyleItem(name=createStyle.get_style_name(), prompt=createStyle.prompt, negative_prompt=createStyle.negative_prompt)
@@ -764,7 +780,11 @@ class Api:
         logger.info(msg=f"update-style, args: {updateStyle}")
 
         if updateStyle.get_style_name() not in shared.prompt_styles.styles:
-            raise Exception(code_style_not_exists, "style name does not exist")
+            raise ApiException(
+                code=code_style_not_exists,
+                message="style name does not exist",
+                status_code=404
+            )
 
         style = shared.prompt_styles.styles[updateStyle.get_style_name()]
 
@@ -786,7 +806,11 @@ class Api:
         lightRequest = StableDiffusionLightTxt2Img(**args)
 
         if not lightRequest.styles_granted():
-            raise Exception(code_style_permission_denied, "style permission denied")
+            raise ApiException(
+                code=code_style_permission_denied,
+                message= "style permission denied",
+                status_code=403
+            )
 
         return self.text_2_image(lightRequest.to_full())
 
