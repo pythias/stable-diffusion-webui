@@ -47,7 +47,9 @@ code_invalid_signature_name = 100004
 code_expired_signature = 100005
 code_invalid_signature = 100006
 code_not_found = 100404
-code_permission_denied = 100403
+code_style_permission_denied = 100007
+code_style_not_exists = 100008
+code_style_already_exists = 100009
 
 class ApiException(Exception):
     def __init__(self, code, message):
@@ -262,7 +264,7 @@ class Api:
         self.add_api_route("/api/v2/prompt-styles", self.get_prompt_styles, methods=["GET", "POST"], response_model=List[PromptStyleItem])
         self.add_api_route("/api/v2/create/prompt-style", self.create_prompt_style, methods=["POST"], response_model=PromptStyleItem)
         self.add_api_route("/api/v2/update/prompt-style", self.update_prompt_style, methods=["POST"], response_model=PromptStyleItem)
-        self.add_api_route("/api/v2/txt2img", self.text2imgapi, methods=["POST"], response_model=TextToImageResponse)
+        self.add_api_route("/api/v2/txt2img", self.text_2_image_v2, methods=["POST"], response_model=TextToImageResponse)
 
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=ImageToImageResponse)
@@ -784,9 +786,7 @@ class Api:
         for k in shared.prompt_styles.styles:
             style = shared.prompt_styles.styles[k]
             
-            # style.name start with req.name
-            style_prefix = user.get_prefix()
-            if style_prefix != style.name[:len(style_prefix)]:
+            if not user.has_permission(style.name):
                 continue
 
             # styleList.append({"name": style[0], "prompt": style[1], "negative_prompt": style[2]})
@@ -802,7 +802,7 @@ class Api:
         assert createStyle.negative_prompt, "negative_prompt cannot be empty!"
         
         if createStyle.get_style_name() in shared.prompt_styles.styles:
-            raise Exception("style name already exists")
+            raise Exception(code_style_already_exists, "style name already exists")
 
         createStyle.save_style()
         return PromptStyleItem(name=createStyle.get_style_name(), prompt=createStyle.prompt, negative_prompt=createStyle.negative_prompt)
@@ -811,7 +811,7 @@ class Api:
         logger.info(msg=f"update-style, args: {updateStyle}")
 
         if updateStyle.get_style_name() not in shared.prompt_styles.styles:
-            raise Exception("style name does not exist")
+            raise Exception(code_style_not_exists, "style name does not exist")
 
         style = shared.prompt_styles.styles[updateStyle.get_style_name()]
 
@@ -824,3 +824,9 @@ class Api:
 
         updateStyle.save_style()
         return PromptStyleItem(name=updateStyle.get_style_name(), prompt=updateStyle.prompt, negative_prompt=updateStyle.negative_prompt)
+
+    def text_2_image_v2(self, request: StableDiffusionTxt2ImgV2API):
+        if not request.styles_granted():
+            raise Exception(code_style_permission_denied, "style permission denied")
+
+        return self.text2imgapi(request.to_full())

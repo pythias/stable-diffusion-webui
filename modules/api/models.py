@@ -301,16 +301,74 @@ class CreateStyle(RequestUser):
 class UpdateStyle(CreateStyle):
     pass
 
+class StableDiffusionLightTxt2Img:
+    def __init__(self, prompt: str = "", styles: List[str] = None, seed: int = -1, sampler_name: str = None, batch_size: int = 1, steps: int = 20, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = True, negative_prompt: str = "", user_name: str = ""):
+        self.prompt = prompt
+        self.styles = styles
+        self.seed = seed
+        self.sampler_name = sampler_name
+        self.batch_size = batch_size
+        self.steps = steps
+        self.cfg_scale = cfg_scale
+        self.width = width
+        self.height = height
+        self.restore_faces = restore_faces
+        self.negative_prompt = negative_prompt
+        self.user_name = user_name
+
+    def styles_granted(self):
+        if self.styles is None:
+            return True
+
+        user = RequestUser()
+        user.user_name = self.user_name
+        
+        for style in self.styles:
+            if not user.has_permission(style_name=style):
+                return False
+        
+        return True
+
+    def to_full(self):
+        return StableDiffusionProcessingTxt2Img(
+            prompt=self.prompt,
+            styles=self.styles,
+            seed=self.seed,
+            sampler_name=self.sampler_name,
+            batch_size=self.batch_size,
+            steps=self.steps,
+            cfg_scale=self.cfg_scale,
+            width=self.width,
+            height=self.height,
+            restore_faces=self.restore_faces,
+            negative_prompt=self.negative_prompt,
+            sampler_index="",
+            script_name=None,
+            script_args=[],
+            send_images=True,
+            save_images=False,
+            alwayson_scripts={},
+        )
+
 StableDiffusionTxt2ImgProcessingAPI = PydanticModelGenerator(
     "StableDiffusionProcessingTxt2Img",
     StableDiffusionProcessingTxt2Img,
     [
-        {"key": "sampler_index", "type": str, "default": "Euler a"},
+        {"key": "sampler_name", "type": str, "default": "Euler a"},
+        {"key": "sampler_index", "type": str, "default": ""},
         {"key": "script_name", "type": str, "default": None},
         {"key": "script_args", "type": list, "default": []},
         {"key": "send_images", "type": bool, "default": True},
         {"key": "save_images", "type": bool, "default": False},
         {"key": "alwayson_scripts", "type": dict, "default": {}},
+    ]
+).generate_model()
+
+StableDiffusionTxt2ImgV2API = PydanticModelGenerator(
+    "StableDiffusionLightTxt2Img",
+    StableDiffusionLightTxt2Img,
+    [
+        {"key": "sampler_name", "type": str, "default": "Euler a"},
         {"key": "user_name", "type": str, "default": ""},
     ]
 ).generate_model()
