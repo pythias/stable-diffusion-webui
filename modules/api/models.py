@@ -1,11 +1,14 @@
 import inspect
 from pydantic import BaseModel, Field, create_model
-from typing import Any, Optional
+from typing import Any, Optional,  Dict, List
 from typing_extensions import Literal
 from inflection import underscore
+
+import modules
+from modules import shared
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import sd_upscalers, opts, parser
-from typing import Dict, List
+from modules.user import RequestUser
 
 API_NOT_ALLOWED = [
     "self",
@@ -76,6 +79,9 @@ class PydanticModelGenerator:
             for (k,v) in self._class_data.items() if k not in API_NOT_ALLOWED
         ]
 
+        if additional_fields is None:
+            return
+
         for fields in additional_fields:
             self._model_def.append(ModelDef(
                 field=underscore(fields["key"]),
@@ -96,19 +102,6 @@ class PydanticModelGenerator:
         DynamicModel.__config__.allow_population_by_field_name = True
         DynamicModel.__config__.allow_mutation = True
         return DynamicModel
-
-StableDiffusionTxt2ImgProcessingAPI = PydanticModelGenerator(
-    "StableDiffusionProcessingTxt2Img",
-    StableDiffusionProcessingTxt2Img,
-    [
-        {"key": "sampler_index", "type": str, "default": "Euler"},
-        {"key": "script_name", "type": str, "default": None},
-        {"key": "script_args", "type": list, "default": []},
-        {"key": "send_images", "type": bool, "default": True},
-        {"key": "save_images", "type": bool, "default": False},
-        {"key": "alwayson_scripts", "type": dict, "default": {}},
-    ]
-).generate_model()
 
 StableDiffusionImg2ImgProcessingAPI = PydanticModelGenerator(
     "StableDiffusionProcessingImg2Img",
@@ -289,3 +282,35 @@ class MemoryResponse(BaseModel):
 class ScriptsList(BaseModel):
     txt2img: list = Field(default=None,title="Txt2img", description="Titles of scripts (txt2img)")
     img2img: list = Field(default=None,title="Img2img", description="Titles of scripts (img2img)")
+
+class CreateStyle(RequestUser):
+    name: str = Field(title="Name")
+    prompt: Optional[str] = Field(title="Prompt")
+    negative_prompt: Optional[str] = Field(title="Negative Prompt")
+
+    def get_style_name(self):
+        return self.get_prefix() + self.name
+
+    def save_style(self):
+        shared.state.begin()
+        style = modules.styles.PromptStyle(self.get_style_name(), self.prompt, self.negative_prompt)
+        shared.prompt_styles.styles[style.name] = style
+        shared.prompt_styles.save_styles(shared.styles_filename)
+        shared.state.end()
+
+class UpdateStyle(CreateStyle):
+    pass
+
+StableDiffusionTxt2ImgProcessingAPI = PydanticModelGenerator(
+    "StableDiffusionProcessingTxt2Img",
+    StableDiffusionProcessingTxt2Img,
+    [
+        {"key": "sampler_index", "type": str, "default": "Euler a"},
+        {"key": "script_name", "type": str, "default": None},
+        {"key": "script_args", "type": list, "default": []},
+        {"key": "send_images", "type": bool, "default": True},
+        {"key": "save_images", "type": bool, "default": False},
+        {"key": "alwayson_scripts", "type": dict, "default": {}},
+        {"key": "user_name", "type": str, "default": ""},
+    ]
+).generate_model()

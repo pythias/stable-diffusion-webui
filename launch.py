@@ -9,6 +9,7 @@ import json
 
 from modules import cmd_args
 from modules.paths_internal import script_path, extensions_dir
+from modules.logger import logger
 
 commandline_args = os.environ.get('COMMANDLINE_ARGS', "")
 sys.argv += shlex.split(commandline_args)
@@ -21,10 +22,6 @@ index_url = os.environ.get('INDEX_URL', "")
 stored_commit_hash = None
 skip_install = False
 dir_repos = "repositories"
-
-if 'GRADIO_ANALYTICS_ENABLED' not in os.environ:
-    os.environ['GRADIO_ANALYTICS_ENABLED'] = 'False'
-
 
 def check_python_version():
     is_windows = platform.system() == "Windows"
@@ -85,6 +82,8 @@ Error code: {result.returncode}""")
         return ""
 
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, env=os.environ if custom_env is None else custom_env)
+
+    logger.info(f"command: {command}, result: {result}")
 
     if result.returncode != 0:
 

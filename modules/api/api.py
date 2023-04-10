@@ -1,9 +1,11 @@
 import base64
+import os
 import io
 import time
 import datetime
 import uvicorn
 import gradio as gr
+
 from threading import Lock
 from io import BytesIO
 from gradio.processing_utils import decode_base64_to_file
@@ -14,6 +16,14 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from secrets import compare_digest
 
+from modules.paths_internal import script_path
+from modules.logger import logger
+
+from Crypto.Signature import PKCS1_v1_5
+from Crypto.PublicKey import RSA
+from Crypto.Hash import SHA256
+
+import modules.styles
 import modules.shared as shared
 from modules import sd_samplers, deepbooru, sd_hijack, images, scripts, ui, postprocessing
 from modules.api.models import *
@@ -21,7 +31,7 @@ from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusion
 from modules.textual_inversion.textual_inversion import create_embedding, train_embedding
 from modules.textual_inversion.preprocess import preprocess
 from modules.hypernetworks.hypernetwork import create_hypernetwork, train_hypernetwork
-from PIL import PngImagePlugin,Image
+from PIL import PngImagePlugin, Image
 from modules.sd_models import checkpoints_list, unload_model_weights, reload_model_weights
 from modules.sd_models_config import find_checkpoint_config_near_filename
 from modules.realesrgan_model import get_realesrgan_models
@@ -29,6 +39,20 @@ from modules import devices
 from typing import List
 import piexif
 import piexif.helper
+
+code_error = 100001
+code_invalid_input = 100002
+code_missing_signature = 100003
+code_invalid_signature_name = 100004
+code_expired_signature = 100005
+code_invalid_signature = 100006
+code_not_found = 100404
+code_permission_denied = 100403
+
+class ApiException(Exception):
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
 
 def upscaler_to_index(name: str):
     try:
@@ -105,6 +129,64 @@ def api_middleware(app: FastAPI):
         rich_available = False
 
     @app.middleware("http")
+    async def v2_only(request: Request, call_next):
+        try:
+            if request.url.path.startswith("/docs") or request.url.path.startswith("/api/v2/") or request.url.path.startswith("/openapi.json"):
+                return await call_next(request)
+
+            raise ApiException(code_not_found, "Original /sdapi/v1 is no longer supported. Please update your code to use API v2.")
+        except Exception as e:
+            return handle_exception(request, e)
+
+    @app.middleware("http")
+    async def verify_signature(request: Request, call_next):
+        if request.url.path.startswith("/docs") or request.url.path.startswith("/openapi.json"):
+            return await call_next(request)
+
+        sign = request.headers.get('X-Signature', '')
+        sign_name = request.headers.get('X-Signature-Name', 'my')
+        sign_timestamp = request.headers.get('X-Signature-Time', '')
+
+        if not sign or not sign_name or not sign_timestamp:
+            raise ApiException(code_missing_signature, "signature is missing.")
+
+        key_path = os.path.join(script_path, f"keys/{sign_name}_rsa_public.pem")
+        if not os.path.exists(key_path):
+            raise ApiException(code_invalid_signature, "signature name is invalid.")
+
+        with open(key_path, mode='rb') as pem_file:
+            key_data = pem_file.read()
+
+        verifier = PKCS1_v1_5.new(RSA.importKey(key_data.strip()))
+
+        if (int(sign_timestamp) + 60) < int(time.time()):
+            raise ApiException(code_expired_signature, "signature was expired.")
+
+        body_bytes = await request.body()
+        data_value = body_bytes.decode() + sign_timestamp
+        data_hash = SHA256.new(data_value.encode('utf-8'))
+        sign_decoded = base64.b64decode(sign)
+
+        if not verifier.verify(data_hash, sign_decoded):
+            raise Exception(code_invalid_signature, "signature is invalid.")
+
+        scope = request.scope
+        receive = request.receive
+
+        async def receive_with_body() -> dict:
+            nonlocal body_bytes
+            if body_bytes:
+                result = {"type": "http.request", "body": body_bytes}
+                body_bytes = None
+            else:
+                result = await receive()
+            return result
+
+        new_request = Request(scope, receive_with_body)
+
+        return await call_next(new_request)
+
+    @app.middleware("http")
     async def log_and_time(req: Request, call_next):
         ts = time.time()
         res: Response = await call_next(req)
@@ -125,13 +207,20 @@ def api_middleware(app: FastAPI):
         return res
 
     def handle_exception(request: Request, e: Exception):
-        err = {
-            "error": type(e).__name__,
-            "detail": vars(e).get('detail', ''),
-            "body": vars(e).get('body', ''),
-            "errors": str(e),
-        }
-        print(f"API error: {request.method}: {request.url} {err}")
+        err = {}
+        if request.url.path.startswith("/api/v2/"):
+            err = {
+                "code": vars(e).get('code', 100001),
+                "error": vars(e).get('message', str(e)),
+            }
+        else:
+            err = {
+                "error": type(e).__name__,
+                "detail": vars(e).get('detail', ''),
+                "body": vars(e).get('body', ''),
+                "errors": str(e),
+            }
+        logger.error("api-exception, url: %s, error: %s", request.url, err)
         if not isinstance(e, HTTPException): # do not print backtrace on known httpexceptions
             if rich_available:
                 console.print_exception(show_locals=True, max_frames=2, extra_lines=1, suppress=[anyio, starlette], word_wrap=False, width=min([console.width, 200]))
@@ -157,6 +246,8 @@ def api_middleware(app: FastAPI):
 
 class Api:
     def __init__(self, app: FastAPI, queue_lock: Lock):
+        logger.info("API init")
+
         if shared.cmd_opts.api_auth:
             self.credentials = dict()
             for auth in shared.cmd_opts.api_auth.split(","):
@@ -167,6 +258,12 @@ class Api:
         self.app = app
         self.queue_lock = queue_lock
         api_middleware(self.app)
+
+        self.add_api_route("/api/v2/prompt-styles", self.get_prompt_styles, methods=["GET", "POST"], response_model=List[PromptStyleItem])
+        self.add_api_route("/api/v2/create/prompt-style", self.create_prompt_style, methods=["POST"], response_model=PromptStyleItem)
+        self.add_api_route("/api/v2/update/prompt-style", self.update_prompt_style, methods=["POST"], response_model=PromptStyleItem)
+        self.add_api_route("/api/v2/txt2img", self.text2imgapi, methods=["POST"], response_model=TextToImageResponse)
+
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=ImageToImageResponse)
         self.add_api_route("/sdapi/v1/extra-single-image", self.extras_single_image_api, methods=["POST"], response_model=ExtrasSingleImageResponse)
@@ -200,6 +297,8 @@ class Api:
 
         self.default_script_arg_txt2img = []
         self.default_script_arg_img2img = []
+
+        logger.info("API server started")
 
     def add_api_route(self, path: str, endpoint, **kwargs):
         if shared.cmd_opts.api_auth:
@@ -537,14 +636,6 @@ class Api:
     def get_realesrgan_models(self):
         return [{"name":x.name,"path":x.data_path, "scale":x.scale} for x in get_realesrgan_models(None)]
 
-    def get_prompt_styles(self):
-        styleList = []
-        for k in shared.prompt_styles.styles:
-            style = shared.prompt_styles.styles[k]
-            styleList.append({"name":style[0], "prompt": style[1], "negative_prompt": style[2]})
-
-        return styleList
-
     def get_embeddings(self):
         db = sd_hijack.model_hijack.embedding_db
 
@@ -687,3 +778,49 @@ class Api:
     def launch(self, server_name, port):
         self.app.include_router(self.router)
         uvicorn.run(self.app, host=server_name, port=port)
+
+    def get_prompt_styles(self, user: RequestUser):
+        styles = []
+        for k in shared.prompt_styles.styles:
+            style = shared.prompt_styles.styles[k]
+            
+            # style.name start with req.name
+            style_prefix = user.get_prefix()
+            if style_prefix != style.name[:len(style_prefix)]:
+                continue
+
+            # styleList.append({"name": style[0], "prompt": style[1], "negative_prompt": style[2]})
+            styles.append(PromptStyleItem(name=style.name, prompt=style.prompt, negative_prompt=style.negative_prompt))
+
+        return styles
+
+    def create_prompt_style(self, createStyle: CreateStyle):
+        logger.info(msg=f"create-style, args: {createStyle}")
+
+        assert createStyle.name, "name cannot be empty!"
+        assert createStyle.prompt, "prompot cannot be empty!"
+        assert createStyle.negative_prompt, "negative_prompt cannot be empty!"
+        
+        if createStyle.get_style_name() in shared.prompt_styles.styles:
+            raise Exception("style name already exists")
+
+        createStyle.save_style()
+        return PromptStyleItem(name=createStyle.get_style_name(), prompt=createStyle.prompt, negative_prompt=createStyle.negative_prompt)
+
+    def update_prompt_style(self, updateStyle: UpdateStyle):
+        logger.info(msg=f"update-style, args: {updateStyle}")
+
+        if updateStyle.get_style_name() not in shared.prompt_styles.styles:
+            raise Exception("style name does not exist")
+
+        style = shared.prompt_styles.styles[updateStyle.get_style_name()]
+
+        # replace not merge
+        if not updateStyle.prompt:
+            updateStyle.prompt = style.prompt
+
+        if not updateStyle.negative_prompt:
+            updateStyle.negative_prompt = style.negative_prompt
+
+        updateStyle.save_style()
+        return PromptStyleItem(name=updateStyle.get_style_name(), prompt=updateStyle.prompt, negative_prompt=updateStyle.negative_prompt)
