@@ -92,7 +92,6 @@ def decode_base64_to_image(encoding):
 
 def encode_pil_to_base64(image):
     with io.BytesIO() as output_bytes:
-
         if opts.samples_format.lower() == 'png':
             use_metadata = False
             metadata = PngImagePlugin.PngInfo()
@@ -264,9 +263,9 @@ class Api:
         self.add_api_route("/api/v2/prompt-styles", self.get_prompt_styles, methods=["GET", "POST"], response_model=List[PromptStyleItem])
         self.add_api_route("/api/v2/create/prompt-style", self.create_prompt_style, methods=["POST"], response_model=PromptStyleItem)
         self.add_api_route("/api/v2/update/prompt-style", self.update_prompt_style, methods=["POST"], response_model=PromptStyleItem)
-        self.add_api_route("/api/v2/txt2img", self.text_2_image_v2, methods=["POST"], response_model=TextToImageResponse)
+        self.add_api_route("/api/v2/txt2img", self.text_2_image_v2, methods=["POST"])
 
-        self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=TextToImageResponse)
+        self.add_api_route("/sdapi/v1/txt2img", self.text_2_image_v1, methods=["POST"], response_model=TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=ImageToImageResponse)
         self.add_api_route("/sdapi/v1/extra-single-image", self.extras_single_image_api, methods=["POST"], response_model=ExtrasSingleImageResponse)
         self.add_api_route("/sdapi/v1/extra-batch-images", self.extras_batch_images_api, methods=["POST"], response_model=ExtrasBatchImagesResponse)
@@ -375,52 +374,6 @@ class Api:
                 if "args" in request.alwayson_scripts[alwayson_script_name]:
                     script_args[alwayson_script.args_from:alwayson_script.args_to] = request.alwayson_scripts[alwayson_script_name]["args"]
         return script_args
-
-    def text2imgapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
-        script_runner = scripts.scripts_txt2img
-        if not script_runner.scripts:
-            script_runner.initialize_scripts(False)
-            ui.create_ui()
-        if not self.default_script_arg_txt2img:
-            self.default_script_arg_txt2img = self.init_default_script_args(script_runner)
-        selectable_scripts, selectable_script_idx = self.get_selectable_script(txt2imgreq.script_name, script_runner)
-
-        populate = txt2imgreq.copy(update={  # Override __init__ params
-            "sampler_name": validate_sampler_name(txt2imgreq.sampler_name or txt2imgreq.sampler_index),
-            "do_not_save_samples": not txt2imgreq.save_images,
-            "do_not_save_grid": not txt2imgreq.save_images,
-        })
-        if populate.sampler_name:
-            populate.sampler_index = None  # prevent a warning later on
-
-        args = vars(populate)
-        args.pop('script_name', None)
-        args.pop('script_args', None) # will refeed them to the pipeline directly after initializing them
-        args.pop('alwayson_scripts', None)
-
-        script_args = self.init_script_args(txt2imgreq, self.default_script_arg_txt2img, selectable_scripts, selectable_script_idx, script_runner)
-
-        send_images = args.pop('send_images', True)
-        args.pop('save_images', None)
-
-        with self.queue_lock:
-            p = StableDiffusionProcessingTxt2Img(sd_model=shared.sd_model, **args)
-            p.scripts = script_runner
-            p.outpath_grids = opts.outdir_txt2img_grids
-            p.outpath_samples = opts.outdir_txt2img_samples
-
-            shared.state.begin()
-            if selectable_scripts != None:
-                p.script_args = script_args
-                processed = scripts.scripts_txt2img.run(p, *p.script_args) # Need to pass args as list here
-            else:
-                p.script_args = tuple(script_args) # Need to pass args as tuple here
-                processed = process_images(p)
-            shared.state.end()
-
-        b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []
-
-        return TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
 
     def img2imgapi(self, img2imgreq: StableDiffusionImg2ImgProcessingAPI):
         init_images = img2imgreq.init_images
@@ -825,8 +778,61 @@ class Api:
         updateStyle.save_style()
         return PromptStyleItem(name=updateStyle.get_style_name(), prompt=updateStyle.prompt, negative_prompt=updateStyle.negative_prompt)
 
-    def text_2_image_v2(self, request: StableDiffusionTxt2ImgV2API):
-        if not request.styles_granted():
+    def text_2_image_v1(self, request: StableDiffusionTxt2ImgProcessingAPI):
+        return self.text_2_image(request)
+
+    def text_2_image_v2(self, request: StableDiffusionTxt2ImgLightAPI):
+        args = vars(request)
+        lightRequest = StableDiffusionLightTxt2Img(**args)
+
+        if not lightRequest.styles_granted():
             raise Exception(code_style_permission_denied, "style permission denied")
 
-        return self.text2imgapi(request.to_full())
+        return self.text_2_image(lightRequest.to_full())
+
+    def text_2_image(self, txt2imgreq):
+        script_runner = scripts.scripts_txt2img
+        if not script_runner.scripts:
+            script_runner.initialize_scripts(False)
+            ui.create_ui()
+
+        if not self.default_script_arg_txt2img:
+            self.default_script_arg_txt2img = self.init_default_script_args(script_runner)
+
+        selectable_scripts, selectable_script_idx = self.get_selectable_script(txt2imgreq.script_name, script_runner)
+
+        populate = txt2imgreq.copy(update={  # Override __init__ params
+            "sampler_name": validate_sampler_name(txt2imgreq.sampler_name or txt2imgreq.sampler_index),
+            "do_not_save_samples": not txt2imgreq.save_images,
+            "do_not_save_grid": not txt2imgreq.save_images,
+        })
+
+        if populate.sampler_name:
+            populate.sampler_index = None  # prevent a warning later on
+
+        args = vars(populate)
+        args.pop('script_name', None)
+        args.pop('script_args', None)
+        args.pop('alwayson_scripts', None)
+
+        script_args = self.init_script_args(txt2imgreq, self.default_script_arg_txt2img, selectable_scripts, selectable_script_idx, script_runner)
+        send_images = args.pop('send_images', True)
+        args.pop('save_images', None)
+
+        with self.queue_lock:
+            p = StableDiffusionProcessingTxt2Img(sd_model=shared.sd_model, **args)
+            p.scripts = script_runner
+            p.outpath_grids = opts.outdir_txt2img_grids
+            p.outpath_samples = opts.outdir_txt2img_samples
+
+            shared.state.begin()
+            if selectable_scripts != None:
+                p.script_args = script_args
+                processed = scripts.scripts_txt2img.run(p, *p.script_args)
+            else:
+                p.script_args = tuple(script_args)
+                processed = process_images(p)
+            shared.state.end()
+
+        b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []
+        return TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())

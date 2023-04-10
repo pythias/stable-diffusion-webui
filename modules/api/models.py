@@ -284,7 +284,7 @@ class ScriptsList(BaseModel):
     img2img: list = Field(default=None,title="Img2img", description="Titles of scripts (img2img)")
 
 class CreateStyle(RequestUser):
-    name: str = Field(title="Name")
+    name: str = Field(title="Name", regex=r"^[a-zA-Z0-9_]{3,16}$")
     prompt: Optional[str] = Field(title="Prompt")
     negative_prompt: Optional[str] = Field(title="Negative Prompt")
 
@@ -302,7 +302,7 @@ class UpdateStyle(CreateStyle):
     pass
 
 class StableDiffusionLightTxt2Img:
-    def __init__(self, prompt: str = "", styles: List[str] = None, seed: int = -1, sampler_name: str = None, batch_size: int = 1, steps: int = 20, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = True, negative_prompt: str = "", user_name: str = ""):
+    def __init__(self, prompt: str = "", styles: List[str] = None, seed: int = -1, sampler_name: str = "Euler a", batch_size: int = 1, steps: int = 20, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = True, negative_prompt: str = "", user_name: str = ""):
         self.prompt = prompt
         self.styles = styles
         self.seed = seed
@@ -330,24 +330,16 @@ class StableDiffusionLightTxt2Img:
         return True
 
     def to_full(self):
-        return StableDiffusionProcessingTxt2Img(
-            prompt=self.prompt,
-            styles=self.styles,
-            seed=self.seed,
-            sampler_name=self.sampler_name,
-            batch_size=self.batch_size,
-            steps=self.steps,
-            cfg_scale=self.cfg_scale,
-            width=self.width,
-            height=self.height,
-            restore_faces=self.restore_faces,
-            negative_prompt=self.negative_prompt,
+        args = vars(self)
+
+        return StableDiffusionTxt2ImgProcessingAPI(
             sampler_index="",
             script_name=None,
             script_args=[],
             send_images=True,
             save_images=False,
             alwayson_scripts={},
+            **args
         )
 
 StableDiffusionTxt2ImgProcessingAPI = PydanticModelGenerator(
@@ -364,7 +356,7 @@ StableDiffusionTxt2ImgProcessingAPI = PydanticModelGenerator(
     ]
 ).generate_model()
 
-StableDiffusionTxt2ImgV2API = PydanticModelGenerator(
+StableDiffusionTxt2ImgLightAPI = PydanticModelGenerator(
     "StableDiffusionLightTxt2Img",
     StableDiffusionLightTxt2Img,
     [
