@@ -1,0 +1,10 @@
+code_error = 100001
+code_invalid_input = 100002
+code_missing_signature = 100003
+code_invalid_signature_name = 100004
+code_expired_signature = 100005
+code_invalid_signature = 100006
+code_not_found = 100404
+code_style_permission_denied = 100007
+code_style_not_exists = 100008
+code_style_already_exists = 100009
