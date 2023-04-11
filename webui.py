@@ -215,7 +215,58 @@ def wait_on_server(demo=None):
 def api_only():
     initialize()
 
-    app = FastAPI()
+    description = """
+二次封装了 Stable Diffusion web UI的接口. 
+
+## 用户
+
+所有接口统计添加了`user_name`这个参数，简单用于控制权限、日志数据统计等。
+
+## 签名
+
+- 签名算法: SHA256
+- 签名数据: POST_RAW + HEAD(X-Signature-Time)
+- 参数 - X-Signature-Name: 调用方名称 header，对应密钥，每个调用方需要提供我一个公钥（2048+）
+- 参数 - X-Signature-Time: 签名时间戳，有效期60秒
+- 参数 - X-Signature: 签名内容，base64
+- 请求数据包: 仅支持json
+
+```php
+$signatureName = 'my';
+$privateKeyPath = "./x/{$signatureName}-private.pem"
+$signatureTime = time();
+$data = ['user_name' => 'test'];
+$json = json_encode($data);
+$source = $json . $signatureTime;
+$privateKey = openssl_pkey_get_private(file_get_contents($privateKeyPath));
+openssl_sign($source, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+```
+
+```bash
+curl -XGET 'http://sd.pocket.sc.weibo.com:21935/api/v2/prompt-styles' \
+    --silent \
+    -H 'Accept: application/json' \
+    -H 'Content-Type: application/json' \
+    -H 'X-Signature-Name:my' \
+    -H 'X-Signature-Time:1681124800' \
+    -H 'X-Signature:Mb0GO2PcPNLO42ZNLZEaqU92+...fCIx+wig=' \
+    -d '{"user_name":"test"}'
+```
+
+"""
+
+    tags_metadata = [
+        {
+            "name": "Styles",
+            "description": "管理用户的角色形象",
+        },
+        {
+            "name": "Images",
+            "description": "生成图片，包括文字描述、角色、图片等来源生成",
+        },
+    ]
+
+    app = FastAPI(description=description, openapi_tags=tags_metadata)
     setup_middleware(app)
     api = create_api(app)
 
