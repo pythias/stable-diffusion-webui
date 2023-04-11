@@ -264,7 +264,7 @@ class Api:
         self.queue_lock = queue_lock
         api_middleware(self.app)
 
-        self.add_api_route("/api/v2/prompt-styles", self.get_prompt_styles, tags=["Styles"], methods=["GET", "POST"], response_model=List[PromptStyleItem])
+        self.add_api_route("/api/v2/prompt-styles", self.get_prompt_styles, tags=["Styles"], methods=["GET"], response_model=List[PromptStyleItem])
         self.add_api_route("/api/v2/create/prompt-style", self.create_prompt_style, tags=["Styles"], methods=["POST"], response_model=PromptStyleItem)
         self.add_api_route("/api/v2/update/prompt-style", self.update_prompt_style, tags=["Styles"], methods=["POST"], response_model=PromptStyleItem)
         self.add_api_route("/api/v2/txt2img", self.text_2_image_v2, tags=["Images"], methods=["POST"])

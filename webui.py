@@ -218,18 +218,20 @@ def api_only():
     description = """
 二次封装了 Stable Diffusion web UI的接口. 
 
-## 用户
+### 用户
 
 所有接口统计添加了`user_name`这个参数，简单用于控制权限、日志数据统计等。
 
-## 签名
+### 签名
 
 - 签名算法: SHA256
 - 签名数据: POST_RAW + HEAD(X-Signature-Time)
-- 参数 - X-Signature-Name: 调用方名称 header，对应密钥，每个调用方需要提供我一个公钥（2048+）
+- 参数 - X-Signature-Name: 调用方名称对应密钥，每个调用方需要提供公钥（2048+）
 - 参数 - X-Signature-Time: 签名时间戳，有效期60秒
 - 参数 - X-Signature: 签名内容，base64
 - 请求数据包: 仅支持json
+
+> 样例代码
 
 ```php
 $signatureName = 'my';
@@ -241,6 +243,8 @@ $source = $json . $signatureTime;
 $privateKey = openssl_pkey_get_private(file_get_contents($privateKeyPath));
 openssl_sign($source, $signature, $privateKey, OPENSSL_ALGO_SHA256);
 ```
+
+> 样例请求
 
 ```bash
 curl -XGET 'http://sd.pocket.sc.weibo.com:21935/api/v2/prompt-styles' \
