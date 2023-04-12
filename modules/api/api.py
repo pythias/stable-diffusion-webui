@@ -168,6 +168,7 @@ def api_middleware(app: FastAPI):
         sign_decoded = base64.b64decode(sign)
 
         if not verifier.verify(data_hash, sign_decoded):
+            logger.error(msg=f"Signature verification failed. sign_name={sign_name} sign_timestamp={sign_timestamp} sign={sign} data_value={data_value}")
             raise ApiException(code_invalid_signature, "signature is invalid.")
 
         scope = request.scope

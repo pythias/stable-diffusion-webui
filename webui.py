@@ -247,13 +247,13 @@ openssl_sign($source, $signature, $privateKey, OPENSSL_ALGO_SHA256);
 > 样例请求
 
 ```bash
-curl -XGET 'http://sd.pocket.sc.weibo.com:21935/api/v2/prompt-styles' \
-    --silent \
-    -H 'Accept: application/json' \
-    -H 'Content-Type: application/json' \
-    -H 'X-Signature-Name:my' \
-    -H 'X-Signature-Time:1681124800' \
-    -H 'X-Signature:Mb0GO2PcPNLO42ZNLZEaqU92+...fCIx+wig=' \
+curl -XGET 'http://sd.pocket.sc.weibo.com:21935/api/v2/prompt-styles' \\
+    --silent \\
+    -H 'Accept: application/json' \\
+    -H 'Content-Type: application/json' \\
+    -H 'X-Signature-Name:my' \\
+    -H 'X-Signature-Time:1681124800' \\
+    -H 'X-Signature:Mb0GO2PcPNLO42ZNLZEaqU92+...fCIx+wig=' \\
     -d '{"user_name":"test"}'
 ```
 
