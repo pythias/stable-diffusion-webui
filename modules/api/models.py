@@ -10,6 +10,7 @@ from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusion
 from modules.shared import sd_upscalers, opts, parser
 from modules.user import RequestUser
 from modules.api.code import *
+from modules.api.error import ApiException
 
 API_NOT_ALLOWED = [
     "self",
@@ -290,14 +291,14 @@ class CharacterRequest(RequestUser):
     negative_prompt: Optional[str] = Field(title="Negative Prompt")
 
     def check(self):
-        if character.prompt == "" and character.negative_prompt == "":
+        if self.prompt == "" and self.negative_prompt == "":
             raise ApiException(
                 code=code_character_was_blank,
                 message="character cannot be empty",
                 status_code=400
             )
 
-        if character.get_style_name() in shared.prompt_styles.styles:
+        if self.get_style_name() in shared.prompt_styles.styles:
             raise ApiException(
                 code=code_character_already_exists,
                 message="character already exists",

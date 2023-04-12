@@ -28,6 +28,7 @@ import modules.shared as shared
 from modules import sd_samplers, deepbooru, sd_hijack, images, scripts, ui, postprocessing
 from modules.api.models import *
 from modules.api.code import *
+from modules.api.error import ApiException
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, process_images
 from modules.textual_inversion.textual_inversion import create_embedding, train_embedding
 from modules.textual_inversion.preprocess import preprocess
@@ -40,17 +41,6 @@ from modules import devices
 from typing import List
 import piexif
 import piexif.helper
-
-class ApiException(HTTPException):
-    def __init__(
-        self, 
-        code, 
-        message,
-        status_code: int = 200,
-    ) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(status_code=status_code)
 
 def upscaler_to_index(name: str):
     try:
