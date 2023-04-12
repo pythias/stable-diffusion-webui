@@ -79,8 +79,10 @@ def model_was_valid(model_info: dict) -> bool:
     return True
 
 
-def download_model(model_id: str) -> tuple:
-    model_info = get_model_info(model_id)
+def download_model(model_id: str, model_info: dict) -> tuple:
+    if model_info is None:
+        model_info = get_model_info(model_id)
+
     if model_info is None or model_info == {}:
         log(f"Can't get model info, id:{model_id}")
         return
@@ -94,6 +96,25 @@ def download_model(model_id: str) -> tuple:
     log(f"Model download started, id:{model_id}, name:{model_name}, url:{download_url}")
     dl_file(download_url, download_file)
     log(f"Download model success, id:{model_id}, name:{model_name}, url:{download_url}")
+
+
+def list_models(query) -> dict:
+    log("Request models, query:" + query)
+
+    r = requests.get(url_by_id+"?"+query, headers=headers, proxies=proxies)
+    if not r.ok:
+        log("Http error, code: " + str(r.status_code) + ", response:" + r.text)
+        return
+
+    result = r.json()
+    if not result:
+        return
+    
+    if not dict_has_keys(result, ["items"]):
+        return
+    
+    return result["items"]
+
 
 def dl_file(url, filepath=None):
     new_headers = headers.copy()
@@ -114,13 +135,14 @@ def dl_file(url, filepath=None):
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
     args.add_argument('-i', '--id', type=int, default=-1)
+    args.add_argument('-q', '--query', type=str, default="")
     args.add_argument('-p', '--proxy', type=str, default="")
     args.add_argument('-r', '--root', type=str, default="")
 
     opt = args.parse_args()
 
-    if opt.id == -1:
-        log("Please specify the model id")
+    if opt.id == -1 and opt.query == "":
+        log("Please specify the model id/query")
         exit(1)
 
     if opt.proxy:
@@ -132,4 +154,13 @@ if __name__ == '__main__':
     if opt.root:
         root_path = opt.root
 
-    download_model(f"{opt.id}")
+    if opt.id != -1:
+        download_model(f"{opt.id}", None)
+    else:
+        models = list_models(opt.query)
+        if models is None or models == {}:
+            log(f"Can't get models, query:{opt.query}")
+            return
+
+        for model in models:
+            download_model(model["id"], model)
