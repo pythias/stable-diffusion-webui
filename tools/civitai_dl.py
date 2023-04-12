@@ -160,7 +160,7 @@ if __name__ == '__main__':
         models = list_models(opt.query)
         if models is None or models == {}:
             log(f"Can't get models, query:{opt.query}")
-            return
+            exit(1)
 
         for model in models:
             download_model(model["id"], model)
