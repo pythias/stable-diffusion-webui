@@ -9,6 +9,7 @@ from modules import shared
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import sd_upscalers, opts, parser
 from modules.user import RequestUser
+from modules.api.code import *
 
 API_NOT_ALLOWED = [
     "self",
@@ -288,6 +289,21 @@ class CharacterRequest(RequestUser):
     prompt: Optional[str] = Field(title="Prompt")
     negative_prompt: Optional[str] = Field(title="Negative Prompt")
 
+    def check(self):
+        if character.prompt == "" and character.negative_prompt == "":
+            raise ApiException(
+                code=code_character_was_blank,
+                message="character cannot be empty",
+                status_code=400
+            )
+
+        if character.get_style_name() in shared.prompt_styles.styles:
+            raise ApiException(
+                code=code_character_already_exists,
+                message="character already exists",
+                status_code=409
+            )
+
     def get_style_name(self):
         return self.character_to_style(self.name)
 
@@ -342,7 +358,7 @@ class StableDiffusionLightTxt2Img:
             self.styles = []
 
         if self.character_name:
-            style_name = user.character_to_style(character_name)
+            style_name = user.character_to_style(self.character_name)
             if style_name not in shared.prompt_styles.styles:
                 return False
             self.styles.append(style_name)

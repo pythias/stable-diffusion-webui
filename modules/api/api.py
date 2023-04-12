@@ -757,29 +757,13 @@ class Api:
     def create_character(self, character: CreateCharacter):
         logger.info(msg=f"create-character, args: {character}")
 
-        assert character.name, "name cannot be empty!"
-        assert character.prompt, "prompot cannot be empty!"
-        assert character.negative_prompt, "negative_prompt cannot be empty!"
-        
-        if character.get_style_name() in shared.prompt_styles.styles:
-            raise ApiException(
-                code=code_style_already_exists,
-                message="style name already exists",
-                status_code=409
-            )
-
+        character.check()
         character.save_style()
         return character.to_style_item()
 
     def update_character(self, character: UpdateCharacter):
         logger.info(msg=f"update-character, args: {character}")
-
-        if character.get_style_name() not in shared.prompt_styles.styles:
-            raise ApiException(
-                code=code_style_not_exists,
-                message="style name does not exist",
-                status_code=404
-            )
+        character.check()
 
         style = shared.prompt_styles.styles[character.get_style_name()]
 
@@ -798,8 +782,8 @@ class Api:
 
         if character.get_style_name() not in shared.prompt_styles.styles:
             raise ApiException(
-                code=code_style_not_exists,
-                message="style name does not exist",
+                code=code_character_not_exists,
+                message="character does not exist",
                 status_code=404
             )
 
@@ -815,8 +799,8 @@ class Api:
 
         if not lightRequest.styles_granted():
             raise ApiException(
-                code=code_style_permission_denied,
-                message="style permission denied",
+                code=code_character_permission_denied,
+                message="not your character",
                 status_code=403
             )
 
