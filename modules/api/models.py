@@ -285,9 +285,11 @@ class ScriptsList(BaseModel):
 
 class CharacterRequest(RequestUser):
     name: str = Field(title="Name", regex=r"^[a-zA-Z0-9_]{3,16}$")
+    prompt: Optional[str] = Field(title="Prompt")
+    negative_prompt: Optional[str] = Field(title="Negative Prompt")
 
     def get_style_name(self):
-        return self.get_prefix() + self.name
+        return self.character_to_style(self.name)
 
     def delete_style(self):
         shared.state.begin()
@@ -296,20 +298,22 @@ class CharacterRequest(RequestUser):
             shared.prompt_styles.save_styles(shared.styles_filename)
         shared.state.end()
 
-class CreateCharacter(CharacterRequest):
-    prompt: Optional[str] = Field(title="Prompt")
-    negative_prompt: Optional[str] = Field(title="Negative Prompt")
-
     def save_style(self):
         shared.state.begin()
-        style = modules.styles.PromptStyle(self.get_style_name(), self.prompt, self.negative_prompt)
+        style = modules.styles.PromptStyle(
+            self.get_style_name(), self.prompt, self.negative_prompt)
         shared.prompt_styles.styles[style.name] = style
         shared.prompt_styles.save_styles(shared.styles_filename)
         shared.state.end()
 
-class UpdateCharacter(CreateCharacter):
+    def to_style_item(self):
+        return PromptStyleItem(name=self.name, prompt=self.prompt, negative_prompt=self.negative_prompt)
+
+class CreateCharacter(CharacterRequest):
     pass
 
+class UpdateCharacter(CreateCharacter):
+    pass
 
 class DeleteCharacter(CharacterRequest):
     pass
@@ -331,17 +335,20 @@ class StableDiffusionLightTxt2Img:
         self.character_name = character_name
 
     def styles_granted(self):
+        user = RequestUser()
+        user.user_name = self.user_name
+
         if self.styles is None:
             self.styles = []
 
         if self.character_name:
-            self.styles.append(self.character_name)
-
-        user = RequestUser()
-        user.user_name = self.user_name
+            style_name = user.character_to_style(character_name)
+            if style_name not in shared.prompt_styles.styles:
+                return False
+            self.styles.append(style_name)
         
         for style in self.styles:
-            if style.find(sub="-") == -1:
+            if style.find("-") == -1:
                 continue
 
             if not user.has_permission(style):

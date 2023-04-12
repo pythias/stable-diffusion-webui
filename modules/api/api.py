@@ -750,7 +750,7 @@ class Api:
                 continue
 
             # styleList.append({"name": style[0], "prompt": style[1], "negative_prompt": style[2]})
-            styles.append(PromptStyleItem(name=style.name, prompt=style.prompt, negative_prompt=style.negative_prompt))
+            styles.append(PromptStyleItem(name=user.style_to_character(style.name), prompt=style.prompt, negative_prompt=style.negative_prompt))
 
         return styles
 
@@ -769,7 +769,7 @@ class Api:
             )
 
         character.save_style()
-        return PromptStyleItem(name=character.get_style_name(), prompt=character.prompt, negative_prompt=character.negative_prompt)
+        return character.to_style_item()
 
     def update_character(self, character: UpdateCharacter):
         logger.info(msg=f"update-character, args: {character}")
@@ -791,7 +791,7 @@ class Api:
             character.negative_prompt = style.negative_prompt
 
         character.save_style()
-        return PromptStyleItem(name=character.get_style_name(), prompt=character.prompt, negative_prompt=character.negative_prompt)
+        return character.to_style_item()
 
     def delete_character(self, character: DeleteCharacter):
         logger.info(msg=f"delete-style, args: {character}")
