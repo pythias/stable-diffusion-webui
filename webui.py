@@ -261,7 +261,7 @@ curl -XGET 'http://sd.pocket.sc.weibo.com:21935/api/v2/prompt-styles' \\
 
     tags_metadata = [
         {
-            "name": "Styles",
+            "name": "Characters",
             "description": "管理用户的角色形象",
         },
         {

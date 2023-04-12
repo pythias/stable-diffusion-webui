@@ -265,9 +265,10 @@ class Api:
         self.queue_lock = queue_lock
         api_middleware(self.app)
 
-        self.add_api_route("/api/v2/prompt-styles", self.get_prompt_styles, tags=["Styles"], methods=["GET"], response_model=List[PromptStyleItem])
-        self.add_api_route("/api/v2/create/prompt-style", self.create_prompt_style, tags=["Styles"], methods=["POST"], response_model=PromptStyleItem)
-        self.add_api_route("/api/v2/update/prompt-style", self.update_prompt_style, tags=["Styles"], methods=["POST"], response_model=PromptStyleItem)
+        self.add_api_route("/api/v2/characters", self.get_characters, tags=["Characters"], methods=["GET"], response_model=List[PromptStyleItem])
+        self.add_api_route("/api/v2/character/create", self.create_character, tags=["Characters"], methods=["POST"], response_model=PromptStyleItem)
+        self.add_api_route("/api/v2/character/update", self.update_character, tags=["Characters"], methods=["POST"], response_model=PromptStyleItem)
+        self.add_api_route("/api/v2/character/delete", self.delete_character, tags=["Characters"], methods=["POST"])
         self.add_api_route("/api/v2/txt2img", self.text_2_image_v2, tags=["Images"], methods=["POST"])
 
         if shared.cmd_opts.api_v1_enabled:
@@ -740,7 +741,7 @@ class Api:
         self.app.include_router(self.router)
         uvicorn.run(self.app, host=server_name, port=port)
 
-    def get_prompt_styles(self, user: RequestUser):
+    def get_characters(self, user: RequestUser):
         styles = []
         for k in shared.prompt_styles.styles:
             style = shared.prompt_styles.styles[k]
@@ -753,44 +754,57 @@ class Api:
 
         return styles
 
-    def create_prompt_style(self, createStyle: CreateStyle):
-        logger.info(msg=f"create-style, args: {createStyle}")
+    def create_character(self, character: CreateCharacter):
+        logger.info(msg=f"create-character, args: {character}")
 
-        assert createStyle.name, "name cannot be empty!"
-        assert createStyle.prompt, "prompot cannot be empty!"
-        assert createStyle.negative_prompt, "negative_prompt cannot be empty!"
+        assert character.name, "name cannot be empty!"
+        assert character.prompt, "prompot cannot be empty!"
+        assert character.negative_prompt, "negative_prompt cannot be empty!"
         
-        if createStyle.get_style_name() in shared.prompt_styles.styles:
+        if character.get_style_name() in shared.prompt_styles.styles:
             raise ApiException(
                 code=code_style_already_exists,
                 message="style name already exists",
                 status_code=409
             )
 
-        createStyle.save_style()
-        return PromptStyleItem(name=createStyle.get_style_name(), prompt=createStyle.prompt, negative_prompt=createStyle.negative_prompt)
+        character.save_style()
+        return PromptStyleItem(name=character.get_style_name(), prompt=character.prompt, negative_prompt=character.negative_prompt)
 
-    def update_prompt_style(self, updateStyle: UpdateStyle):
-        logger.info(msg=f"update-style, args: {updateStyle}")
+    def update_character(self, character: UpdateCharacter):
+        logger.info(msg=f"update-character, args: {character}")
 
-        if updateStyle.get_style_name() not in shared.prompt_styles.styles:
+        if character.get_style_name() not in shared.prompt_styles.styles:
             raise ApiException(
                 code=code_style_not_exists,
                 message="style name does not exist",
                 status_code=404
             )
 
-        style = shared.prompt_styles.styles[updateStyle.get_style_name()]
+        style = shared.prompt_styles.styles[character.get_style_name()]
 
         # replace not merge
-        if not updateStyle.prompt:
-            updateStyle.prompt = style.prompt
+        if not character.prompt:
+            character.prompt = style.prompt
 
-        if not updateStyle.negative_prompt:
-            updateStyle.negative_prompt = style.negative_prompt
+        if not character.negative_prompt:
+            character.negative_prompt = style.negative_prompt
 
-        updateStyle.save_style()
-        return PromptStyleItem(name=updateStyle.get_style_name(), prompt=updateStyle.prompt, negative_prompt=updateStyle.negative_prompt)
+        character.save_style()
+        return PromptStyleItem(name=character.get_style_name(), prompt=character.prompt, negative_prompt=character.negative_prompt)
+
+    def delete_character(self, character: DeleteCharacter):
+        logger.info(msg=f"delete-style, args: {character}")
+
+        if character.get_style_name() not in shared.prompt_styles.styles:
+            raise ApiException(
+                code=code_style_not_exists,
+                message="style name does not exist",
+                status_code=404
+            )
+
+        character.delete_style()
+        return
 
     def text_2_image_v1(self, request: StableDiffusionTxt2ImgProcessingAPI):
         return self.text_2_image(request)
@@ -802,7 +816,7 @@ class Api:
         if not lightRequest.styles_granted():
             raise ApiException(
                 code=code_style_permission_denied,
-                message= "style permission denied",
+                message="style permission denied",
                 status_code=403
             )
 

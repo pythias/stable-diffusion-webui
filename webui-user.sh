@@ -13,19 +13,19 @@
 #export COMMANDLINE_ARGS=""
 
 # python3 executable
-#python_cmd="python3"
+# python_cmd="python3"
 
 # git executable
 #export GIT="git"
 
 # python3 venv without trailing slash (defaults to ${install_dir}/${clone_dir}/venv)
-#venv_dir="venv"
+# venv_dir="/root/miniconda3/envs/py310"
 
 # script to launch to start the app
-#export LAUNCH_SCRIPT="launch.py"
+# export LAUNCH_SCRIPT="launch.py"
 
 # install command for torch
-#export TORCH_COMMAND="pip install torch==1.12.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113"
+# export TORCH_COMMAND="pip install torch==1.12.1+cu117 --extra-index-url https://download.pytorch.org/whl/cu117"
 
 # Requirements file to use for stable-diffusion-webui
 #export REQS_FILE="requirements_versions.txt"

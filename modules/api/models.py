@@ -283,13 +283,22 @@ class ScriptsList(BaseModel):
     txt2img: list = Field(default=None,title="Txt2img", description="Titles of scripts (txt2img)")
     img2img: list = Field(default=None,title="Img2img", description="Titles of scripts (img2img)")
 
-class CreateStyle(RequestUser):
+class CharacterRequest(RequestUser):
     name: str = Field(title="Name", regex=r"^[a-zA-Z0-9_]{3,16}$")
-    prompt: Optional[str] = Field(title="Prompt")
-    negative_prompt: Optional[str] = Field(title="Negative Prompt")
 
     def get_style_name(self):
         return self.get_prefix() + self.name
+
+    def delete_style(self):
+        shared.state.begin()
+        if self.get_style_name() in shared.prompt_styles.styles:
+            del shared.prompt_styles.styles[self.get_style_name()]
+            shared.prompt_styles.save_styles(shared.styles_filename)
+        shared.state.end()
+
+class CreateCharacter(CharacterRequest):
+    prompt: Optional[str] = Field(title="Prompt")
+    negative_prompt: Optional[str] = Field(title="Negative Prompt")
 
     def save_style(self):
         shared.state.begin()
@@ -298,11 +307,15 @@ class CreateStyle(RequestUser):
         shared.prompt_styles.save_styles(shared.styles_filename)
         shared.state.end()
 
-class UpdateStyle(CreateStyle):
+class UpdateCharacter(CreateCharacter):
+    pass
+
+
+class DeleteCharacter(CharacterRequest):
     pass
 
 class StableDiffusionLightTxt2Img:
-    def __init__(self, prompt: str = "", styles: List[str] = None, seed: int = -1, sampler_name: str = "Euler a", batch_size: int = 1, steps: int = 20, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = True, negative_prompt: str = "", user_name: str = ""):
+    def __init__(self, prompt: str = "", styles: List[str] = None, seed: int = -1, sampler_name: str = "Euler a", batch_size: int = 1, steps: int = 20, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = True, negative_prompt: str = "", user_name: str = "", character_name: str = ""):
         self.prompt = prompt
         self.styles = styles
         self.seed = seed
@@ -315,16 +328,23 @@ class StableDiffusionLightTxt2Img:
         self.restore_faces = restore_faces
         self.negative_prompt = negative_prompt
         self.user_name = user_name
+        self.character_name = character_name
 
     def styles_granted(self):
         if self.styles is None:
-            return True
+            self.styles = []
+
+        if self.character_name:
+            self.styles.append(self.character_name)
 
         user = RequestUser()
         user.user_name = self.user_name
         
         for style in self.styles:
-            if not user.has_permission(style_name=style):
+            if style.find(sub="-") == -1:
+                continue
+
+            if not user.has_permission(style):
                 return False
         
         return True
@@ -362,5 +382,6 @@ StableDiffusionTxt2ImgLightAPI = PydanticModelGenerator(
     [
         {"key": "sampler_name", "type": str, "default": "Euler a"},
         {"key": "user_name", "type": str, "default": ""},
+        {"key": "character_name", "type": str, "default": ""},
     ]
 ).generate_model()
