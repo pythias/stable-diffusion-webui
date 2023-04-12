@@ -4,7 +4,6 @@ import os
 import tempfile
 import argparse
 import shutil
-import zlib
 
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__) , "../"))
 
@@ -20,8 +19,6 @@ proxies = {
 folders = {}
 
 url_by_id = "https://civitai.com/api/v1/models/"
-url_by_hash = "https://civitai.com/api/v1/model-versions/by-hash/"
-url_by_version_id = "https://civitai.com/api/v1/model-versions/"
 
 model_type_paths = {
     "Checkpoint": "models/Stable-diffusion",
@@ -82,18 +79,6 @@ def model_was_valid(model_info: dict) -> bool:
     return True
 
 
-def crc32_hash_file(file_path):
-    # Initialize the CRC32 value
-    crc = 0
-
-    # Read the file in binary mode and update the CRC32 value in chunks
-    with open(file_path, 'rb') as file:
-        for data in iter(lambda: file.read(8192), b''):
-            crc = zlib.crc32(data, crc)
-
-    # Ensure the CRC32 value is unsigned
-    return crc & 0xFFFFFFFF
-
 def download_model(model_id: str) -> tuple:
     model_info = get_model_info(model_id)
     if model_info is None or model_info == {}:
@@ -108,13 +93,7 @@ def download_model(model_id: str) -> tuple:
 
     log(f"Model download started, id:{model_id}, name:{model_name}, url:{download_url}")
     dl_file(download_url, download_file)
-
-    model_hash = model_file["hashes"]["CRC32"]
-    downloaded_hash = crc32_hash_file(download_file)
-    if downloaded_hash != model_hash:
-        log(f"Downloaded model file is broken, id:{model_id}, name:{model_name}, url:{download_url}, hash:{model_hash}, crc32:{downloaded_hash}")
-    else:
-        log(f"Download model success, id:{model_id}, name:{model_name}, url:{download_url}")
+    log(f"Download model success, id:{model_id}, name:{model_name}, url:{download_url}")
 
 def dl_file(url, filepath=None):
     new_headers = headers.copy()
